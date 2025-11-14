@@ -9,8 +9,10 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  # Nom temporaire pour l'image construite localement et scannée
-  TEMP_IMAGE_TAG: ${{ github.repository }}:scan-temp
+  # Variable pour stocker UNIQUEMENT le nom du dépôt (ex: ue19-lab-05)
+  REPO_NAME: ${{ github.event.repository.name }}
+  # Tag pour l'image construite localement (ex: ue19-lab-05:scan-temp)
+  TEMP_IMAGE_TAG: ${{ github.event.repository.name }}:scan-temp
 
 jobs:
   build-and-push:
@@ -24,23 +26,22 @@ jobs:
         uses: actions/checkout@v4
 
       # ------------------------------------------------------------------
-      # NOUVELLE ÉTAPE 1 : Build de l'image localement pour le scan
-      # 'load: true' charge l'image dans le Docker daemon du runner.
+      # Étape 1 : Build de l'image localement pour le scan
+      # 'load: true' est crucial pour rendre l'image disponible localement.
       - name: 🏗️ Build Docker image for Scan
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: false # NE PAS PUBLIER
+          push: false 
           tags: ${{ env.TEMP_IMAGE_TAG }}
           load: true
 
       # ------------------------------------------------------------------
-      # NOUVELLE ÉTAPE 2 : Scan de Sécurité avec Trivy
-      # Le workflow ÉCHOUE si des vulnérabilités critiques/hautes sont trouvées.
+      # Étape 2 : Scan de Sécurité avec Trivy
+      # Utilise le tag local corrigé. Échoue si HIGH ou CRITICAL sont trouvées.
       - name: 🛡️ Scan for Vulnerabilities (Trivy)
         uses: aquasecurity/trivy-action@master
         with:
-          # Fait référence à l'image construite à l'étape précédente
           image-ref: ${{ env.TEMP_IMAGE_TAG }}
           format: 'table'
           exit-code: '1'
@@ -48,7 +49,7 @@ jobs:
           severity: 'HIGH,CRITICAL'
           
       # ------------------------------------------------------------------
-      # Étape existante : Log in
+      # Étape 3 : Log in au Container registry
       - name: 🔑 Log in to the Container registry
         uses: docker/login-action@v3
         with:
@@ -56,7 +57,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Étape existante : Metadata
+      # Étape 4 : Extraction des métadonnées (tags finaux)
       - name: 🏷️ Extract metadata (tags) for Docker
         id: meta
         uses: docker/metadata-action@v5
@@ -66,9 +67,7 @@ jobs:
             type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
             type=sha,format=short
 
-      # Étape existante : Build et Push FINAL
-      # Note: Cette étape est techniquement un rebuild/push, car l'image locale
-      # n'a pas les tags finaux requis.
+      # Étape 5 : Build final et Push vers GHCR
       - name: 🚀 Push Final Docker image to GHCR
         uses: docker/build-push-action@v5
         with:
